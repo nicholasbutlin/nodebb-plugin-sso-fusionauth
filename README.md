@@ -15,6 +15,10 @@ NodeBB Plugin that allows users to login/register via any configured OAuth provi
 
 ## Trouble?
 
-The NodeBB team builds out SSO plugins for a nominal fee. [Reach out to us for a quote.](mailto:sales@nodebb.org)
+## Note
 
-Find us on [the community forums](http://community.nodebb.org)!
+THis provides login of the user lready exists
+
+TODO: Create user if not exists
+TODO: Logout user fully on logout not yet working
+TODO: ACP login with SSO
