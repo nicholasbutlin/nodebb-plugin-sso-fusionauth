@@ -21,6 +21,15 @@
     "name": "Nickos",
     "email": ""
   },
+  "constributors":[
+    {    "name": "Nickos",
+      "email": ""
+    }, {
+      "name": "Julian Lam",
+      "email": "julian@nodebb.org"
+    }
+
+  ],
   "license": "MIT",
   "readme": "",
   "readmeFilename": "README.md",
