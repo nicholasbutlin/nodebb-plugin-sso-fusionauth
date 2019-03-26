@@ -1,11 +1,11 @@
 {
-  "name": "nodebb-plugin-sso-oauth-ct",
-  "version": "0.3.3",
-  "description": "Chargetogether Generic OAuth SSO",
+  "name": "nodebb-plugin-sso-fusionauth",
+  "version": "0.1.0",
+  "description": "NodeBB FusionAuth SSO - Forked from nodebb-plugin-sso-oauth ",
   "main": "library.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/julianlam/nodebb-plugin-sso-oauth"
+    "url": "https://github.com/nicholasbutlin/nodebb-plugin-sso-fusionauth"
   },
   "keywords": [
     "nodebb",
@@ -18,13 +18,10 @@
     "registration"
   ],
   "author": {
-    "name": "Julian Lam / Nickos",
+    "name": "Nickos",
     "email": ""
   },
   "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/julianlam/nodebb-plugin-sso-oauth/issues"
-  },
   "readme": "",
   "readmeFilename": "README.md",
   "dependencies": {

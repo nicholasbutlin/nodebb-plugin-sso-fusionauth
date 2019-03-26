@@ -13,26 +13,29 @@
   const passport = module.parent.require("passport");
   const nconf = module.parent.require("nconf");
   const winston = module.parent.require("winston");
+  const request = module.parent.require("request");
+
+  const OAuth = {};
+  const OAuth2Strategy = require("passport-oauth").OAuth2Strategy;
 
   // Use config.json for nconf
   const authurl = nconf.get("oauth:url");
-  const constants = Object.freeze({
-    type: "oauth2",
-    name: "chargetogether",
-    oauth2: {
-      authorizationURL: authurl + "/oauth2/authorize",
-      tokenURL: authurl + "/oauth2/token",
-      clientID: nconf.get("oauth:id"),
-      clientSecret: nconf.get("oauth:secret")
-    },
-    userRoute: authurl + "/oauth2/userinfo"
+  const providerName = nconf.get("oauth:name");
+
+  const callBackUrl = "/auth/" + providerName + "/callback";
+
+  // options for the oAuth2 Config
+  const options = Object.freeze({
+    authorizationURL: authurl + "/oauth2/authorize",
+    tokenURL: authurl + "/oauth2/token",
+    clientID: nconf.get("oauth:id"),
+    clientSecret: nconf.get("oauth:secret"),
+    userRoute: authurl + "/oauth2/introspect",
+    passReqToCallback: true,
+    callbackURL: nconf.get("url") + callBackUrl,
+    logoutURL: authurl + "/oauth2/logout",
+    scope: "user email"
   });
-
-  const OAuth = {};
-  let passportOAuth;
-  let opts;
-
-  winston.error("[sso-fusionauth] starting");
 
   /**
    * getStrategy
@@ -40,48 +43,48 @@
    *
    */
   OAuth.getStrategy = function(strategies, callback) {
-    passportOAuth = require("passport-oauth")["OAuth2Strategy"];
-    winston.info("[sso-fusionauth] Get Strategy");
+    winston.info("[sso-fusionauth] getStrategy");
 
-    // OAuth 2 options
-    opts = constants.oauth2;
-    opts.callbackURL =
-      nconf.get("url") + "/auth/" + constants.name + "/callback";
+    OAuth2Strategy.Strategy.prototype.userProfile = function(
+      accessToken,
+      done
+    ) {
+      request.post(
+        {
+          url: options.userRoute,
+          form: { client_id: options.clientID, token: accessToken }
+        },
+        function(err, req) {
+          if (err) {
+            return done(err);
+          }
 
-    passportOAuth.Strategy.prototype.userProfile = function(accessToken, done) {
-      console.log(accessToken);
-      this._oauth2.get(constants.userRoute, accessToken, function(
-        err,
-        body,
-        res
-      ) {
-        if (err) {
-          return done(err);
+          try {
+            var json = JSON.parse(req.body);
+            OAuth.parseUserReturn(json, function(err, profile) {
+              if (err) {
+                return done(err);
+              }
+              profile.provider = providerName;
+
+              done(null, profile);
+            });
+          } catch (e) {
+            done(e);
+          }
         }
-
-        try {
-          var json = JSON.parse(body);
-          winston.info("[sso-fusionauth]:" + JSON.stringify(json));
-          OAuth.parseUserReturn(json, function(err, profile) {
-            if (err) return done(err);
-            profile.provider = constants.name;
-
-            done(null, profile);
-          });
-        } catch (e) {
-          done(e);
-        }
-      });
+      );
     };
 
-    opts.passReqToCallback = true;
-
-    winston.info("[sso-fusionauth]" + JSON.stringify(opts));
-
     passport.use(
-      constants.name,
-      new passportOAuth(opts, function(req, token, secret, profile, done) {
-        winston.info("[sso-fusionauth]:" + JSON.stringify(token));
+      providerName,
+      new OAuth2Strategy.Strategy(options, function(
+        req,
+        accessToken,
+        refeshToken,
+        profile,
+        done
+      ) {
         OAuth.login(
           {
             oAuthid: profile.id,
@@ -91,6 +94,7 @@
           },
           function(err, user) {
             if (err) {
+              console.log(err);
               return done(err);
             }
 
@@ -102,11 +106,11 @@
     );
 
     strategies.push({
-      name: constants.name,
-      url: "/auth/" + constants.name,
-      callbackURL: "/auth/" + constants.name + "/callback",
+      name: providerName,
+      url: "/auth/" + providerName,
+      callbackURL: callBackUrl,
       icon: "fa-check-square",
-      scope: (constants.scope || "").split(",")
+      scope: (options.scope || "").split(",")
     });
 
     callback(null, strategies);
@@ -118,13 +122,14 @@
    *
    */
   OAuth.parseUserReturn = function(data, callback) {
-    // Find out what is available by uncommenting this line:
-    winston.info("[sso-fusionauth] data:" + JSON.stringify(data));
+    // Find out what is available
+    // winston.info("[sso-fusionauth] data:" + JSON.stringify(data, null, 2));
 
     var profile = {};
     profile.id = data.sub;
     profile.displayName = data.name;
     profile.emails = [{ value: data.email }];
+    profile.isAdmin = data.roles[0] === "Admin";
 
     callback(null, profile);
   };
@@ -135,7 +140,6 @@
    *
    */
   OAuth.login = function(payload, callback) {
-    winston.error("[sso-fusionauth] login");
     OAuth.getUidByOAuthid(payload.oAuthid, function(err, uid) {
       if (err) {
         return callback(err);
@@ -150,8 +154,8 @@
         // New User
         var success = function(uid) {
           // Save provider-specific information to the user
-          User.setUserField(uid, constants.name + "Id", payload.oAuthid);
-          db.setObjectField(constants.name + "Id:uid", payload.oAuthid, uid);
+          User.setUserField(uid, providerName + "Id", payload.oAuthid);
+          db.setObjectField(providerName + "Id:uid", payload.oAuthid, uid);
 
           if (payload.isAdmin) {
             Groups.join("administrators", uid, function(err) {
@@ -199,9 +203,9 @@
    *
    */
   OAuth.getUidByOAuthid = function(oAuthid, callback) {
-    winston.error("[sso-fusionauth] getUidByOAuthid");
-    db.getObjectField(constants.name + "Id:uid", oAuthid, function(err, uid) {
+    db.getObjectField(providerName + "Id:uid", oAuthid, function(err, uid) {
       if (err) {
+        console.log(err);
         return callback(err);
       }
       callback(null, uid);
@@ -211,13 +215,9 @@
   OAuth.deleteUserData = function(data, callback) {
     async.waterfall(
       [
-        async.apply(User.getUserField, data.uid, constants.name + "Id"),
+        async.apply(User.getUserField, data.uid, providerName + "Id"),
         function(oAuthIdToDelete, next) {
-          db.deleteObjectField(
-            constants.name + "Id:uid",
-            oAuthIdToDelete,
-            next
-          );
+          db.deleteObjectField(providerName + "Id:uid", oAuthIdToDelete, next);
         }
       ],
       function(err) {
@@ -236,9 +236,25 @@
     );
   };
 
+  OAuth.logout = function(req, res, nex) {
+    // authenticationController.logout(req, res, nex);
+
+    winston.info("[sso-fusionauth] logout");
+    request(
+      { url: options.logoutURL, qs: { client_id: options.clientID } },
+      function(err, response, body) {
+        if (err) {
+          console.log(err);
+          return;
+        }
+        console.log("Get response: " + response.statusCode);
+      }
+    );
+  };
+
   // If this filter is not there, the deleteUserData function will fail when getting the oauthId for deletion.
   OAuth.whitelistFields = function(params, callback) {
-    params.whitelist.push(constants.name + "Id");
+    params.whitelist.push(providerName + "Id");
     callback(null, params);
   };
 
