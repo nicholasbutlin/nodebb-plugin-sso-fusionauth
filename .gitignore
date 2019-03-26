@@ -15,6 +15,7 @@ local.properties
 .classpath
 .settings/
 .loadpath
+yarn.lock
 
 # External tool builders
 .externalToolBuilders/
