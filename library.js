@@ -15,7 +15,9 @@
   const winston = module.parent.require("winston");
   const request = module.parent.require("request");
 
-  const OAuth = {};
+  const FusionAuth = {};
+  FusionAuth.utils = {};
+
   const OAuth2Strategy = require("passport-oauth").OAuth2Strategy;
 
   // Use config.json for nconf
@@ -38,11 +40,44 @@
   });
 
   /**
+   * utils.parseUserReturn
+   *
+   *
+   */
+  FusionAuth.utils.parseUserReturn = function(data, callback) {
+    // Find out what is available
+    winston.info("[sso-fusionauth] data:" + JSON.stringify(data, null, 2));
+
+    var profile = {};
+    profile.oAuthid = data.sub;
+    profile.username = data.name ? data.name : data.email;
+    profile.email = data.email;
+    profile.isAdmin = data.roles[0] === "Admin";
+
+    callback(null, profile);
+  };
+
+  /**
+   * utils.getUidByOAuthid
+   *
+   *
+   */
+  FusionAuth.utils.getUidByOAuthid = function(oAuthid, callback) {
+    db.getObjectField(providerName + "Id:uid", oAuthid, function(err, uid) {
+      if (err) {
+        console.log(err);
+        return callback(err);
+      }
+      callback(null, uid);
+    });
+  };
+
+  /**
    * getStrategy
    *
    *
    */
-  OAuth.getStrategy = function(strategies, callback) {
+  FusionAuth.getStrategy = function(strategies, callback) {
     winston.info("[sso-fusionauth] getStrategy");
 
     OAuth2Strategy.Strategy.prototype.userProfile = function(
@@ -61,7 +96,7 @@
 
           try {
             var json = JSON.parse(req.body);
-            OAuth.parseUserReturn(json, function(err, profile) {
+            FusionAuth.utils.parseUserReturn(json, function(err, profile) {
               if (err) {
                 return done(err);
               }
@@ -85,23 +120,15 @@
         profile,
         done
       ) {
-        OAuth.login(
-          {
-            oAuthid: profile.id,
-            handle: profile.displayName,
-            email: profile.emails[0].value,
-            isAdmin: profile.isAdmin
-          },
-          function(err, user) {
-            if (err) {
-              console.log(err);
-              return done(err);
-            }
-
-            authenticationController.onSuccessfulLogin(req, user.uid);
-            done(null, user);
+        OAuth.login(profile, function(err, user) {
+          if (err) {
+            console.log(err);
+            return done(err);
           }
-        );
+
+          authenticationController.onSuccessfulLogin(req, user.uid);
+          done(null, user);
+        });
       })
     );
 
@@ -117,31 +144,16 @@
   };
 
   /**
-   * parseUserReturn
-   *
-   *
-   */
-  OAuth.parseUserReturn = function(data, callback) {
-    // Find out what is available
-    // winston.info("[sso-fusionauth] data:" + JSON.stringify(data, null, 2));
-
-    var profile = {};
-    profile.id = data.sub;
-    profile.displayName = data.name;
-    profile.emails = [{ value: data.email }];
-    profile.isAdmin = data.roles[0] === "Admin";
-
-    callback(null, profile);
-  };
-
-  /**
    * login
    *
    *
    */
-  OAuth.login = function(payload, callback) {
-    OAuth.getUidByOAuthid(payload.oAuthid, function(err, uid) {
+  FusionAuth.login = function(profile, callback) {
+    FusionAuth.utils.getUidByOAuthid(profile.oAuthid, function(err, uid) {
+      winston.info("[sso-fusionauth] getUidByOAuthid from login");
+
       if (err) {
+        winston.error(err);
         return callback(err);
       }
 
@@ -152,12 +164,12 @@
         });
       } else {
         // New User
-        var success = function(uid) {
+        const onSuccessfulUID = function(uid) {
           // Save provider-specific information to the user
-          User.setUserField(uid, providerName + "Id", payload.oAuthid);
-          db.setObjectField(providerName + "Id:uid", payload.oAuthid, uid);
+          User.setUserField(uid, providerName + "Id", profile.oAuthid);
+          db.setObjectField(providerName + "Id:uid", profile.oAuthid, uid);
 
-          if (payload.isAdmin) {
+          if (profile.isAdmin) {
             Groups.join("administrators", uid, function(err) {
               callback(err, {
                 uid: uid
@@ -170,7 +182,7 @@
           }
         };
 
-        User.getUidByEmail(payload.email, function(err, uid) {
+        User.getUidByEmail(profile.email, function(err, uid) {
           if (err) {
             return callback(err);
           }
@@ -178,19 +190,19 @@
           if (!uid) {
             User.create(
               {
-                username: payload.handle,
-                email: payload.email
+                username: profile.username,
+                email: profile.email
               },
               function(err, uid) {
                 if (err) {
                   return callback(err);
                 }
 
-                success(uid);
+                onSuccessfulUID(uid);
               }
             );
           } else {
-            success(uid); // Existing account -- merge
+            onSuccessfulUID(uid); // Existing account -- merge
           }
         });
       }
@@ -198,21 +210,11 @@
   };
 
   /**
-   * getUidByOAuthid
+   * deleteUserData
    *
    *
    */
-  OAuth.getUidByOAuthid = function(oAuthid, callback) {
-    db.getObjectField(providerName + "Id:uid", oAuthid, function(err, uid) {
-      if (err) {
-        console.log(err);
-        return callback(err);
-      }
-      callback(null, uid);
-    });
-  };
-
-  OAuth.deleteUserData = function(data, callback) {
+  FusionAuth.deleteUserData = function(data, callback) {
     async.waterfall(
       [
         async.apply(User.getUserField, data.uid, providerName + "Id"),
@@ -236,10 +238,14 @@
     );
   };
 
-  OAuth.logout = function(req, res, nex) {
-    // authenticationController.logout(req, res, nex);
-
+  /**
+   * logout
+   *
+   *
+   */
+  FusionAuth.logout = function(req, res, next) {
     winston.info("[sso-fusionauth] logout");
+    authenticationController.logout(req, res, next);
     request(
       { url: options.logoutURL, qs: { client_id: options.clientID } },
       function(err, response, body) {
@@ -253,10 +259,10 @@
   };
 
   // If this filter is not there, the deleteUserData function will fail when getting the oauthId for deletion.
-  OAuth.whitelistFields = function(params, callback) {
+  FusionAuth.whitelistFields = function(params, callback) {
     params.whitelist.push(providerName + "Id");
     callback(null, params);
   };
 
-  module.exports = OAuth;
+  module.exports = FusionAuth;
 })(module);
