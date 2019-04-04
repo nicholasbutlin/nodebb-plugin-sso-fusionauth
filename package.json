@@ -21,14 +21,15 @@
     "name": "Nickos",
     "email": ""
   },
-  "constributors":[
-    {    "name": "Nickos",
+  "constributors": [
+    {
+      "name": "Nickos",
       "email": ""
-    }, {
+    },
+    {
       "name": "Julian Lam",
       "email": "julian@nodebb.org"
     }
-
   ],
   "license": "MIT",
   "readme": "",
@@ -38,8 +39,7 @@
     "passport-oauth": "~1.0.0"
   },
   "nbbpm": {
-    "compatibility": "^1.0.1",
-    "index": false
+    "compatibility": "^1.0.1"
   },
   "devDependencies": {
     "@commitlint/cli": "^7.3.2",
