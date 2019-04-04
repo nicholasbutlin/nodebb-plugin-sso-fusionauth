@@ -104,8 +104,8 @@
 
               done(null, profile);
             });
-          } catch (e) {
-            done(e);
+          } catch (err) {
+            done(err);
           }
         }
       );
