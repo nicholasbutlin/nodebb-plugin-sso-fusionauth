@@ -47,10 +47,13 @@
   FusionAuth.utils.parseUserReturn = function(data, callback) {
     // Find out what is available
     winston.info("[sso-fusionauth] data:" + JSON.stringify(data, null, 2));
+    const re = /^([A-Za-z0-9._%+-])+/;
 
     var profile = {};
     profile.oAuthid = data.sub;
-    profile.username = data.name ? data.name : data.email;
+    profile.username = data.preferred_username
+      ? data.preferred_username
+      : re.match(data.email);
     profile.email = data.email;
     profile.isAdmin = data.roles[0] === "Admin";
 
