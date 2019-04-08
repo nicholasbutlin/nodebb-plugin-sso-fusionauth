@@ -120,7 +120,7 @@
         profile,
         done
       ) {
-        OAuth.login(profile, function(err, user) {
+        FusionAuth.login(profile, function(err, user) {
           if (err) {
             console.log(err);
             return done(err);
